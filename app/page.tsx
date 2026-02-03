@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 
-// Note data with name and vertical position on the treble clef staff
-// Position is measured from the bottom line (E4), each step is half a line/space
-const notes = [
-  { name: "G", position: -2 }, // Middle C - one ledger line below staff
+// Treble clef notes - position measured from bottom line (E4)
+const trebleNotes = [
+  { name: "G", position: -2 }, // One ledger line below staff
   { name: "A", position: -1 }, // Below bottom line
   { name: "B", position: 0 },  // Bottom line (E4)
   { name: "C", position: 1 },  // First space
@@ -13,6 +12,27 @@ const notes = [
   { name: "E", position: 3 },  // Second space
   { name: "F", position: 4 },  // Third line (middle line)
 ];
+
+// Bass clef notes - position measured from bottom line (G2)
+const bassNotes = [
+  { name: "G", position: 0 },  // Bottom line (G2)
+  { name: "A", position: 1 },  // First space
+  { name: "B", position: 2 },  // Second line
+  { name: "C", position: 3 },  // Second space
+  { name: "D", position: 4 },  // Third line (middle line)
+  { name: "E", position: 5 },  // Third space
+  { name: "F", position: 6 },  // Fourth line (F3 - bass clef line)
+];
+
+// Fisher-Yates shuffle algorithm
+function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
 
 // SVG component that renders a note on a treble clef staff
 function TrebleClefNote({ position }: { position: number }) {
@@ -71,11 +91,97 @@ function TrebleClefNote({ position }: { position: number }) {
   );
 }
 
+// SVG component that renders a note on a bass clef staff
+function BassClefNote({ position }: { position: number }) {
+  const staffLineSpacing = 20;
+  const staffTop = 60;
+  const noteY = staffTop + (4 - position) * (staffLineSpacing / 2);
+
+  return (
+    <svg viewBox="0 0 200 200" className="w-full h-full">
+      {/* Staff lines */}
+      {[0, 1, 2, 3, 4].map((i) => (
+        <line
+          key={i}
+          x1="30"
+          y1={staffTop + i * staffLineSpacing}
+          x2="170"
+          y2={staffTop + i * staffLineSpacing}
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
+      ))}
+
+      {/* Bass clef symbol */}
+      <text
+        x="25"
+        y={staffTop + 3.2 * staffLineSpacing}
+        fontSize="80"
+        fontFamily="serif"
+        fill="currentColor"
+      >
+        𝄢
+      </text>
+
+      {/* Ledger line for notes above the staff */}
+      {position >= 6 && (
+        <line
+          x1="115"
+          y1={staffTop - staffLineSpacing}
+          x2="155"
+          y2={staffTop - staffLineSpacing}
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
+      )}
+
+      {/* Note (filled oval) */}
+      <ellipse
+        cx="135"
+        cy={noteY}
+        rx="12"
+        ry="9"
+        fill="currentColor"
+        transform={`rotate(-15, 135, ${noteY})`}
+      />
+    </svg>
+  );
+}
+
 export default function Home() {
   const [currentNoteIndex, setCurrentNoteIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
+  const [clef, setClef] = useState<"treble" | "bass">("treble");
+  const [isShuffled, setIsShuffled] = useState(false);
+  const [shuffledNotes, setShuffledNotes] = useState<typeof trebleNotes>([]);
 
+  const baseNotes = clef === "treble" ? trebleNotes : bassNotes;
+  const notes = isShuffled ? shuffledNotes : baseNotes;
   const currentNote = notes[currentNoteIndex];
+
+  const handleShuffle = useCallback(() => {
+    const newShuffled = shuffleArray(baseNotes);
+    setShuffledNotes(newShuffled);
+    setIsShuffled(true);
+    setCurrentNoteIndex(0);
+    setIsFlipped(false);
+  }, [baseNotes]);
+
+  const handleReset = useCallback(() => {
+    setIsShuffled(false);
+    setCurrentNoteIndex(0);
+    setIsFlipped(false);
+  }, []);
+
+  const handleClefChange = (newClef: "treble" | "bass") => {
+    setClef(newClef);
+    setCurrentNoteIndex(0);
+    setIsFlipped(false);
+    if (isShuffled) {
+      const newBase = newClef === "treble" ? trebleNotes : bassNotes;
+      setShuffledNotes(shuffleArray(newBase));
+    }
+  };
 
   const nextNote = () => {
     setIsFlipped(false);
@@ -93,9 +199,33 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-indigo-50 to-purple-50 p-8 dark:from-zinc-900 dark:to-zinc-800">
-      <h1 className="mb-8 text-3xl font-bold text-zinc-800 dark:text-zinc-100">
+      <h1 className="mb-6 text-3xl font-bold text-zinc-800 dark:text-zinc-100">
         Music Note Flashcards
       </h1>
+
+      {/* Clef selector */}
+      <div className="mb-6 flex gap-2">
+        <button
+          onClick={() => handleClefChange("treble")}
+          className={`rounded-lg px-4 py-2 font-medium transition-colors ${
+            clef === "treble"
+              ? "bg-indigo-500 text-white"
+              : "bg-zinc-200 text-zinc-700 hover:bg-zinc-300 dark:bg-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-500"
+          }`}
+        >
+          Treble Clef
+        </button>
+        <button
+          onClick={() => handleClefChange("bass")}
+          className={`rounded-lg px-4 py-2 font-medium transition-colors ${
+            clef === "bass"
+              ? "bg-indigo-500 text-white"
+              : "bg-zinc-200 text-zinc-700 hover:bg-zinc-300 dark:bg-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-500"
+          }`}
+        >
+          Bass Clef
+        </button>
+      </div>
 
       {/* Flashcard */}
       <div
@@ -110,7 +240,11 @@ export default function Home() {
           {/* Front - Note on staff */}
           <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white shadow-xl backface-hidden dark:bg-zinc-700">
             <div className="h-48 w-48 text-zinc-800 dark:text-zinc-100">
-              <TrebleClefNote position={currentNote.position} />
+              {clef === "treble" ? (
+                <TrebleClefNote position={currentNote.position} />
+              ) : (
+                <BassClefNote position={currentNote.position} />
+              )}
             </div>
           </div>
 
@@ -141,6 +275,24 @@ export default function Home() {
         >
           Next →
         </button>
+      </div>
+
+      {/* Shuffle button */}
+      <div className="mt-4 flex gap-3">
+        <button
+          onClick={handleShuffle}
+          className="rounded-full bg-purple-500 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-600"
+        >
+          Shuffle
+        </button>
+        {isShuffled && (
+          <button
+            onClick={handleReset}
+            className="rounded-full bg-zinc-200 px-5 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-300 dark:bg-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-500"
+          >
+            Reset Order
+          </button>
+        )}
       </div>
 
       {/* Progress indicator */}
