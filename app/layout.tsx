@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Music Note Flashcards",
-  description: "Learn to read music notes on the treble clef",
+  title: "Italian Flashcards",
+  description: "Learn Italian vocabulary and verb conjugations",
 };
 
 export default function RootLayout({
