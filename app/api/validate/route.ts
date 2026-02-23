@@ -7,6 +7,33 @@ export async function POST(req: NextRequest) {
   const { mode, italianWord, englishWord, sentence, aiPrompt, category, isVerb } =
     await req.json();
 
+  // Mode: "converse" → conversational Italian tutor
+  if (mode === "converse") {
+    const msg = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 200,
+      messages: [
+        {
+          role: "user",
+          content: `You are a friendly Italian conversation partner. The student is practicing the ${
+            isVerb ? "verb" : "word"
+          } "${italianWord}" (English: "${englishWord}", category: ${category}).
+
+The student said: "${sentence}"
+
+Reply naturally IN ITALIAN (1-2 sentences), continuing the conversation and staying on-topic with the word being practiced. After your Italian reply, add a brief English note in parentheses if it helps clarify meaning.
+
+Keep it simple and conversational — B1 level or below.`,
+        },
+      ],
+    });
+
+    const text =
+      msg.content[0].type === "text" ? msg.content[0].text : "";
+
+    return NextResponse.json({ reply: text.trim() });
+  }
+
   // Mode: "prompt" without sentence → generate a practice prompt
   if (mode === "prompt" && !sentence) {
     const msg = await client.messages.create({

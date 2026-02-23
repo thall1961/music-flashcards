@@ -47,7 +47,7 @@ export default function Home() {
   const [reviewMode, setReviewMode] = useState(false);
 
   // AI sentence validator state
-  const [aiMode, setAiMode] = useState<"validate" | "prompt">("validate");
+  const [aiMode, setAiMode] = useState<"validate" | "prompt" | "converse">("validate");
   const [sentenceInput, setSentenceInput] = useState("");
   const [aiResult, setAiResult] = useState<{
     result: "correct" | "close" | "wrong";
@@ -56,6 +56,19 @@ export default function Home() {
   const [aiPrompt, setAiPrompt] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  // Converse mode state
+  const [isListening, setIsListening] = useState(false);
+  const [converseReply, setConverseReply] = useState<string | null>(null);
+  const [hasSpeechSupport, setHasSpeechSupport] = useState(false);
+
+  // Check for speech recognition support
+  useEffect(() => {
+    setHasSpeechSupport(
+      typeof window !== "undefined" &&
+        ("webkitSpeechRecognition" in window || "SpeechRecognition" in window)
+    );
+  }, []);
 
   // Load misses from localStorage on mount
   useEffect(() => {
@@ -102,6 +115,8 @@ export default function Home() {
     setAiPrompt(null);
     setAiLoading(false);
     setAiError(null);
+    setConverseReply(null);
+    window.speechSynthesis.cancel();
   }, []);
 
   const handleAiSubmit = async () => {
@@ -162,6 +177,70 @@ export default function Home() {
     } finally {
       setAiLoading(false);
     }
+  };
+
+  const handleConverse = async (transcript: string) => {
+    if (!currentCard || !transcript.trim()) return;
+    const italianWord = extractItalianWord(currentCard.back);
+
+    setAiLoading(true);
+    setAiError(null);
+    setConverseReply(null);
+    try {
+      const res = await fetch("/api/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "converse",
+          italianWord,
+          englishWord: currentCard.front,
+          sentence: transcript.trim(),
+          category: currentCard.category,
+          isVerb: isVerbCard,
+        }),
+      });
+      const data = await res.json();
+      if (data.reply) {
+        setConverseReply(data.reply);
+        speakItalian(data.reply);
+      }
+    } catch {
+      setAiError("Failed to get response. Check your API key.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const startListening = (autoSubmit: boolean) => {
+    if (!hasSpeechSupport) return;
+
+    const SpeechRecognition =
+      (window as /* eslint-disable-next-line @typescript-eslint/no-explicit-any */ any).webkitSpeechRecognition ||
+      (window as /* eslint-disable-next-line @typescript-eslint/no-explicit-any */ any).SpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = "it-IT";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onresult = (event: { results: { transcript: string }[][] }) => {
+      const transcript = event.results[0][0].transcript;
+      setSentenceInput(transcript);
+      setIsListening(false);
+      if (autoSubmit) {
+        handleConverse(transcript);
+      }
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    setIsListening(true);
+    recognition.start();
   };
 
   const markGotIt = () => {
@@ -265,6 +344,13 @@ export default function Home() {
     setIsFlipped(false);
     resetAiState();
     setCurrentIndex((prev) => (prev - 1 + cards.length) % cards.length);
+  };
+
+  const speakItalian = (text: string) => {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "it-IT";
+    window.speechSynthesis.speak(utterance);
   };
 
   const flipCard = () => {
@@ -450,7 +536,79 @@ export default function Home() {
             >
               Prompt Me
             </button>
+            {hasSpeechSupport && (
+              <button
+                onClick={() => {
+                  setAiMode("converse");
+                  setAiResult(null);
+                  setAiError(null);
+                  setAiPrompt(null);
+                  setConverseReply(null);
+                }}
+                className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
+                  aiMode === "converse"
+                    ? "bg-teal-500 text-white"
+                    : "bg-zinc-200 text-zinc-600 hover:bg-zinc-300 dark:bg-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-500"
+                }`}
+              >
+                Converse
+              </button>
+            )}
           </div>
+
+          {/* Converse mode UI */}
+          {aiMode === "converse" && (
+            <div className="flex flex-col items-center gap-3">
+              {/* Mic button */}
+              <button
+                onClick={() => startListening(true)}
+                disabled={isListening || aiLoading}
+                className={`flex h-16 w-16 items-center justify-center rounded-full text-2xl transition-all ${
+                  isListening
+                    ? "animate-pulse bg-teal-500 text-white shadow-lg shadow-teal-500/50"
+                    : aiLoading
+                      ? "bg-zinc-300 text-zinc-500 dark:bg-zinc-600 dark:text-zinc-400"
+                      : "bg-teal-500 text-white hover:bg-teal-600 active:scale-95"
+                }`}
+                title={isListening ? "Listening..." : "Tap to speak Italian"}
+              >
+                🎤
+              </button>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                {isListening
+                  ? "Listening... speak now"
+                  : aiLoading
+                    ? "Getting response..."
+                    : "Tap to speak Italian"}
+              </p>
+
+              {/* Transcribed text */}
+              {sentenceInput && (
+                <div className="w-full rounded-lg bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200">
+                  <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">You said: </span>
+                  {sentenceInput}
+                </div>
+              )}
+
+              {/* Claude's reply */}
+              {converseReply && (
+                <div className="w-full rounded-lg bg-teal-50 px-3 py-2 text-sm text-teal-800 dark:bg-teal-900/30 dark:text-teal-200">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-xs font-medium text-teal-600 dark:text-teal-400">Claude:</span>
+                    <button
+                      type="button"
+                      onClick={() => speakItalian(converseReply)}
+                      className="text-lg opacity-60 transition-opacity hover:opacity-100"
+                      title="Replay response"
+                    >
+                      🔊
+                    </button>
+                  </div>
+                  {converseReply}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Generate prompt button (prompt mode, before prompt generated) */}
           {aiMode === "prompt" && !aiPrompt && (
@@ -486,6 +644,21 @@ export default function Home() {
                 placeholder="Type an Italian sentence..."
                 className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 placeholder-zinc-400 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-sky-500"
               />
+              {hasSpeechSupport && (
+                <button
+                  type="button"
+                  onClick={() => startListening(false)}
+                  disabled={isListening}
+                  className={`shrink-0 rounded-lg px-2 py-2 text-lg transition-colors ${
+                    isListening
+                      ? "animate-pulse bg-teal-500 text-white"
+                      : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-500"
+                  }`}
+                  title={isListening ? "Listening..." : "Speak to fill input"}
+                >
+                  🎤
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={aiLoading || !sentenceInput.trim()}
@@ -514,11 +687,21 @@ export default function Home() {
                     ? "\u26A0"
                     : "\u2717"}
               </span>
-              <span>
+              <span className="flex-1">
                 {aiResult.result === "correct"
                   ? "Correct!"
                   : aiResult.explanation}
               </span>
+              {sentenceInput.trim() && (
+                <button
+                  type="button"
+                  onClick={() => speakItalian(sentenceInput.trim())}
+                  className="shrink-0 text-lg leading-tight opacity-60 transition-opacity hover:opacity-100"
+                  title="Read aloud in Italian"
+                >
+                  🔊
+                </button>
+              )}
             </div>
           )}
 
